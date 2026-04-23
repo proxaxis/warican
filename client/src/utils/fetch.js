@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_URL || 'https://bill-server.xcw.me:50001').replace(/\/$/, '');
 
 export function toSafeString(value) {
   return encodeURIComponent(value);
