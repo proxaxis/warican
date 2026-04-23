@@ -1,89 +1,127 @@
 <script setup>
-import { computed } from 'vue'
-import { COMMON_CURRENCIES, COMMON_CURRENCY_CODES } from '@/constants/currencies'
+import { ref, computed, onMounted } from 'vue';
+import { useUserStore } from '@/stores/user';
+
+const userStore = useUserStore();
 
 const props = defineProps({
   modelValue: {
-    type: String,
-    default: '',
+    type: Object,
+    default: () => ({ code: '', name: '', symbol: '' }),
   },
-  name: {
-    type: String,
-    default: '',
-  },
-  id: {
-    type: String,
-    default: '',
-  },
-  disabled: {
-    type: Boolean,
-    default: false,
-  },
-  required: {
-    type: Boolean,
-    default: false,
-  },
-  placeholder: {
-    type: String,
-    default: '',
-  },
-})
+});
+const emit = defineEmits(['update:modelValue']);
 
-const emit = defineEmits(['update:modelValue', 'change'])
+const vmSearchQuery = ref('');
+const currencies = ref([]);
 
-const normalizedValue = computed(() => {
-  if (!props.modelValue) {
-    return ''
+// 主要な通貨コード
+const MAJOR_CODES = ['JPY', 'USD', 'EUR', 'GBP', 'CNY', 'KRW'];
+
+// 検索クエリに基づいて通貨リストをフィルタリングする計算プロパティ
+const filteredList = computed(() => {
+  const query = vmSearchQuery.value.toLowerCase().trim();
+  const list = currencies.value;
+
+  if (!query) {
+    const major = list.filter((item) => MAJOR_CODES.includes(item.code));
+    const others = list.filter((item) => !MAJOR_CODES.includes(item.code));
+    return { major, others };
   }
 
-  const code = String(props.modelValue).toUpperCase()
-  return COMMON_CURRENCY_CODES.includes(code) ? code : ''
-})
+  // コード、名前の両方で検索可能
+  const matched = list.filter((item) => item.code.toLowerCase().includes(query) || item.name.toLowerCase().includes(query));
+  return { major: [], others: matched };
+});
 
-function onChange(event) {
-  const nextValue = String(event.target.value)
-  emit('update:modelValue', nextValue)
-  emit('change', nextValue)
-}
+// 通貨コードから詳細オブジェクトを生成するユーティリティ
+const getCurrencyDetail = (code) => {
+  // 日本円など、通貨名の取得
+  const name = new Intl.DisplayNames([userStore.locale], { type: 'currency' }).of(code);
+
+  // ￥など、通貨記号の取得
+  const symbol =
+    new Intl.NumberFormat(userStore.locale, {
+      style: 'currency',
+      currency: code,
+    })
+      .formatToParts(0)
+      .find((p) => p.type === 'currency')?.value || code;
+
+  return { code, name, symbol };
+};
+
+// ユーザーの環境から初期通貨を推測する
+// const getLocalCurrencyCode = () => {
+//   try {
+//     const nf = new Intl.NumberFormat(userStore.locale, { style: 'currency', currency: 'USD' });
+//     return nf.resolvedOptions().currency || 'JPY';
+//   } catch {
+//     return 'JPY';
+//   }
+// };
+
+// セレクトボックス変更時のハンドラ
+const handleChange = (e) => {
+  const selectedCode = e.target.value;
+  const detail = getCurrencyDetail(selectedCode);
+  emit('update:modelValue', detail);
+};
+
+onMounted(() => {
+  // ブラウザから全通貨コードを取得
+  const codes = Intl.supportedValuesOf('currency');
+
+  // 全通貨の情報をあらかじめ詳細化して保持
+  currencies.value = codes.map((code) => getCurrencyDetail(code));
+
+  // 初期値が空の場合、ユーザーの環境に合わせてセット
+  if (!props.modelValue || !props.modelValue.code) {
+    // const defaultCode = getLocalCurrencyCode();
+    const defaultCode = 'JPY'; // とりあえず日本円をデフォルトにしておく
+    emit('update:modelValue', getCurrencyDetail(defaultCode));
+  }
+});
 </script>
 
 <template>
-  <select
-    :value="normalizedValue"
-    :name="name || undefined"
-    :id="id || undefined"
-    :disabled="disabled"
-    :required="required"
-    @change="onChange"
-    class="currency-select"
-  >
-    <option v-if="placeholder" value="" disabled>
-      {{ placeholder }}
-    </option>
-    <option v-for="currency in COMMON_CURRENCIES" :key="currency.code" :value="currency.code">
-      {{ currency.code }} ({{ currency.symbol }}) - {{ currency.name }}
-    </option>
-  </select>
+  <div class="currency-selector">
+    <input v-model="vmSearchQuery" type="text" placeholder="コードまたは名前で検索: 米ドル, USD..." class="search-input" />
+
+    <select :value="modelValue?.code" @change="handleChange" class="select-field">
+      <option value="" disabled>通貨を選択してください</option>
+
+      <template v-if="filteredList.major.length > 0">
+        <optgroup label="主要な通貨">
+          <option v-for="item in filteredList.major" :key="`major-${item.code}`" :value="item.code">
+            {{ item.code }} - {{ item.name }} ({{ item.symbol }})
+          </option>
+        </optgroup>
+      </template>
+
+      <optgroup :label="vmSearchQuery ? '検索結果' : 'すべての通貨'">
+        <option v-for="item in filteredList.others" :key="item.code" :value="item.code">
+          {{ item.code }} - {{ item.name }} ({{ item.symbol }})
+        </option>
+      </optgroup>
+    </select>
+  </div>
 </template>
 
-<style scoped>
-.currency-select {
+<style lang="scss" scoped>
+.currency-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
   width: 100%;
-  padding: 0.6rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--border-radius);
-  background-color: var(--bg-0);
+}
+
+optgroup {
+  font-weight: bold;
+  color: var(--text-1);
+}
+
+option {
   color: var(--text-0);
-  transition: 0.3s;
-}
-
-.currency-select:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-.currency-select:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
 }
 </style>

@@ -1,90 +1,87 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue';
 
 const props = defineProps({
   modelValue: {
-    type: [Number, String, null],
+    type: String,
     default: null,
   },
-  autoDetect: {
-    type: Boolean,
-    default: true,
-  },
-})
+});
+const emit = defineEmits(['update:modelValue']);
 
-const emit = defineEmits(['update:modelValue', 'change'])
+const vmSearchQuery = ref('');
+const timeZones = ref([]);
 
-const offsets = Array.from({ length: 25 }, (_, index) => index - 12)
+// 主要なタイムゾーン
+const MAJOR_TIMEZONES = ['UTC', 'Asia/Tokyo', 'America/New_York', 'Europe/London', 'Asia/Shanghai', 'Europe/Paris'];
 
-const normalizedValue = computed(() => {
-  if (props.modelValue === '' || props.modelValue == null) {
-    return ''
+// 検索フィルタリングロジック
+const filteredTimeZones = computed(() => {
+  const query = vmSearchQuery.value.toLowerCase().trim();
+
+  // 主要なタイムゾーン（検索中は含めない、または全体から探す）
+  if (!query) {
+    // 未入力時は「主要」+「それ以外」の順で表示
+    const others = timeZones.value.filter((tz) => !MAJOR_TIMEZONES.includes(tz));
+    return { major: MAJOR_TIMEZONES, others };
   }
 
-  const offset = Number(props.modelValue)
-  if (!Number.isFinite(offset)) {
-    return ''
-  }
+  // 検索中
+  const matched = timeZones.value.filter((tz) => tz.toLowerCase().includes(query));
+  return { major: [], others: matched };
+});
 
-  return clampOffset(Math.round(offset))
-})
+const updateValue = (e) => {
+  emit('update:modelValue', e.target.value);
+};
 
 onMounted(() => {
-  if (!props.autoDetect) {
-    return
+  // 全タイムゾーンを取得
+  timeZones.value = Intl.supportedValuesOf('timeZone');
+
+  // ユーザーの現在地をデフォルト値としてセット
+  if (!props.modelValue) {
+    const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    emit('update:modelValue', userTZ);
   }
-
-  if (props.modelValue !== '' && props.modelValue != null) {
-    return
-  }
-
-  emit('update:modelValue', detectTimeZoneOffset())
-})
-
-function detectTimeZoneOffset() {
-  const minutes = new Date().getTimezoneOffset()
-  const utcOffset = -minutes / 60
-  return clampOffset(Math.round(utcOffset))
-}
-
-function clampOffset(offset) {
-  return Math.min(12, Math.max(-12, offset))
-}
-
-function formatOffsetLabel(offset) {
-  const sign = offset >= 0 ? '+' : '-'
-  const abs = Math.abs(offset)
-  return `UTC${sign}${String(abs).padStart(2, '0')}:00`
-}
-
-function onChange(event) {
-  const nextValue = Number(event.target.value)
-  emit('update:modelValue', nextValue)
-  emit('change', nextValue)
-}
+});
 </script>
 
 <template>
-  <select :value="normalizedValue" @change="onChange" class="timezone-select">
-    <option v-for="offset in offsets" :key="offset" :value="offset">
-      {{ formatOffsetLabel(offset) }}
-    </option>
-  </select>
+  <div class="timezone-selector">
+    <input id="tz-search" v-model="vmSearchQuery" type="text" placeholder="タイムゾーンを検索: Tokyo, London..." class="search-input" />
+
+    <select :value="modelValue" @change="updateValue" class="tz-select">
+      <template v-if="filteredTimeZones.major.length > 0">
+        <optgroup label="主要なタイムゾーン">
+          <option v-for="tz in filteredTimeZones.major" :key="`major-${tz}`" :value="tz">
+            {{ tz }}
+          </option>
+        </optgroup>
+      </template>
+
+      <optgroup :label="vmSearchQuery ? '検索結果' : 'すべてのタイムゾーン'">
+        <option v-for="tz in filteredTimeZones.others" :key="tz" :value="tz">
+          {{ tz }}
+        </option>
+      </optgroup>
+    </select>
+  </div>
 </template>
 
 <style scoped>
-.timezone-select {
-  width: 100%;
-  padding: 0.6rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--border-radius);
-  background-color: var(--bg-0);
-  color: var(--text-0);
-  transition: 0.3s;
+.timezone-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
-.timezone-select:focus {
-  outline: none;
-  border-color: var(--primary);
+optgroup {
+  font-weight: bold;
+  color: var(--text-1);
+}
+
+option {
+  color: var(--text-0);
 }
 </style>

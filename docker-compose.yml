@@ -1,5 +1,20 @@
 services:
-  # 1. Backend (Express.js)
+  database:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: warican_database
+    environment:
+      MYSQL_ROOT_PASSWORD: M5deUqIO2RxLrEEiOeIIPm2VCK5fdpvjlBURDx0EPTvm2YJ5CFzr0UqLKwyVHOu6ZY9xb08pDTgtgGUjUk4FNc1iJGKAOwSivmEvp1KuIo60taRV2Ldh0hfLO9iqtZ5a
+      MYSQL_DATABASE: warican_database
+      MYSQL_USER: app
+      MYSQL_PASSWORD: Qv7eWBN5BcEQrOl1t7WGIhhyo76JhqhwlxcSqNw2Q7itdH9wNtvaIWZEOv9xTIReBnnKspzwzigYk3Bbu7HKjHZXxRPCSlnvWJ9bWTglhIQI4TZ7GotTfFNsbHw1oA2c
+    volumes:
+      - ./database/resource:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - app_network
+  
   server:
     image: node:24.12.0
     container_name: warican_server
@@ -9,6 +24,9 @@ services:
       - NODE_ENV=development
       - PORT=3000
       - DB_HOST=database
+      - DB_USER=app
+      - DB_PASSWORD=Qv7eWBN5BcEQrOl1t7WGIhhyo76JhqhwlxcSqNw2Q7itdH9wNtvaIWZEOv9xTIReBnnKspzwzigYk3Bbu7HKjHZXxRPCSlnvWJ9bWTglhIQI4TZ7GotTfFNsbHw1oA2c
+      - DB_NAME=warican_database
     volumes:
       - ./server:/app
     ports:
@@ -16,8 +34,9 @@ services:
     command: sleep infinity
     depends_on:
       - database
+    networks:
+      - app_network
 
-  # 2. Frontend (Vue.js)
   client:
     image: node:24.12.0
     container_name: warican_client
@@ -31,20 +50,11 @@ services:
     ports:
       - "5173:5173"
     command: sleep infinity
+    depends_on:
+      - server
+    networks:
+      - app_network
 
-  # 3. MySQL Server
-  database:
-    image: mysql:8.0
-    container_name: warican_database
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: app_database
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
-    volumes:
-      - ./database/data:/var/lib/mysql
-      - ./database/data:/var/lib/mysql
-      - ./database/config/app.cnf:/etc/mysql/conf.d/app.cnf
-      - ./database/init:/docker-entrypoint-initdb.d
-    ports:
-      - "3306:3306"
+networks:
+  app_network:
+    driver: bridge

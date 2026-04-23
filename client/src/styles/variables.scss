@@ -43,7 +43,7 @@ $themes: (
     border: rgba(255, 255, 255, 0.3),
     shadow: rgba(255, 255, 255, 0.3),
     primary: #0000af,
-    danger: #a50000,
+    danger: #ff0000,
     accent: #ff3434,
   ),
 );
@@ -57,7 +57,16 @@ $themes: (
 }
 
 @mixin narrow() {
-  @media (min-width: 1024px) {
+  @media (max-width: 1024px) {
     @content;
+  }
+}
+
+@mixin buttonAnimation() {
+  cursor: pointer;
+
+  &:hover {
+    transform: translateY(-0.2rem);
+    filter: brightness(1.05);
   }
 }

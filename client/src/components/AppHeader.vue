@@ -13,10 +13,10 @@ function toggleTheme() {
 
 <template>
   <header class="app-header">
-    <h1><router-link :to="{ name: 'NewGroup' }">割り勘管理</router-link></h1>
+    <h1><router-link :to="{ name: 'IndexPage' }">立替精算アプリ</router-link></h1>
     <nav>
       <ul>
-        <li><router-link :to="{ name: 'NewGroup' }">グループ作成</router-link></li>
+        <slot></slot>
         <li><button @click="toggleTheme"><component :is="userStore.theme === 'light' ? IconMoon : IconSun" /></button></li>
       </ul>
     </nav>
@@ -34,7 +34,7 @@ function toggleTheme() {
   width: calc(100% - 2rem);
 }
 
-nav ul {
+ul {
   display: flex;
   gap: 1rem;
   list-style: none;
@@ -43,9 +43,20 @@ nav ul {
   align-items: center;
 }
 
-button {
-  background: none;
-  border: none;
-  cursor: pointer;
+li {
+  button, :slotted(button), :slotted(a) {
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .icons, :slotted(.icons) {
+    &:hover {
+      transform: scale(1.1);
+    }
+  }
 }
 </style>

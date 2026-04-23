@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
   modelValue: {
@@ -10,311 +10,166 @@ const props = defineProps({
     type: String,
     default: '',
   },
-  max: {
+  timezone: {
     type: String,
-    default: '',
+    default: () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   },
-  name: {
-    type: String,
-    default: '',
-  },
-  id: {
-    type: String,
-    default: '',
-  },
-  disabled: {
-    type: Boolean,
-    default: false,
-  },
-  required: {
-    type: Boolean,
-    default: false,
-  },
-  placeholder: {
-    type: String,
-    default: 'Select date',
-  },
-})
+});
 
-const emit = defineEmits(['update:modelValue', 'change'])
+const emit = defineEmits(['update:modelValue']);
 
-const isOpen = ref(false)
-const today = new Date()
-const viewYear = ref(today.getFullYear())
-const viewMonth = ref(today.getMonth())
+const isOpen = ref(false);
+const vmDraftDate = ref('');
 
-const normalizedValue = computed(() => normalizeDateValue(props.modelValue))
-const selectedDate = computed(() => parseYmd(normalizedValue.value))
-const minDate = computed(() => parseYmd(normalizeDateValue(props.min)))
-const maxDate = computed(() => parseYmd(normalizeDateValue(props.max)))
+function pad(value) {
+  return String(value).padStart(2, '0');
+}
 
-const displayText = computed(() => {
-  if (!selectedDate.value) {
-    return props.placeholder
+function getSafeTimeZone() {
+  try {
+    if (props.timezone) {
+      new Intl.DateTimeFormat('en-US', { timeZone: props.timezone });
+      return props.timezone;
+    }
+  } catch (e) {
+    // fallback to UTC
   }
-  return formatDateForDisplay(selectedDate.value)
-})
 
-const monthLabel = computed(
-  () => `${viewYear.value}-${String(viewMonth.value + 1).padStart(2, '0')}`,
-)
+  return 'UTC';
+}
 
-const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+function getDatePartsInTimeZone(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
 
-const calendarDays = computed(() => buildCalendarDays(viewYear.value, viewMonth.value))
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) return '';
+  return `${year}-${month}-${day}`;
+}
+
+function getTimeZoneOffsetMillis(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  const day = Number(parts.find((part) => part.type === 'day')?.value);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+  const second = Number(parts.find((part) => part.type === 'second')?.value);
+
+  const asUtcMillis = Date.UTC(year, month - 1, day, hour, minute, second);
+  return asUtcMillis - date.getTime();
+}
+
+function toInputDate(value) {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const timeZone = getSafeTimeZone();
+  return getDatePartsInTimeZone(date, timeZone);
+}
+
+function toDisplayDate(value) {
+  const inputValue = toInputDate(value);
+  if (!inputValue) return '日付を選択';
+
+  const [year, month, day] = inputValue.split('-');
+  return `${year}/${month}/${day}`;
+}
+
+function toIsoUtc(value) {
+  if (!value) return '';
+
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return '';
+
+  const timeZone = getSafeTimeZone();
+  const localMidnightUtcBasis = Date.UTC(year, month - 1, day, 0, 0, 0);
+  let utcMillis = localMidnightUtcBasis;
+
+  for (let i = 0; i < 3; i += 1) {
+    const offsetMillis = getTimeZoneOffsetMillis(new Date(utcMillis), timeZone);
+    const nextUtcMillis = localMidnightUtcBasis - offsetMillis;
+    if (nextUtcMillis === utcMillis) break;
+    utcMillis = nextUtcMillis;
+  }
+
+  return new Date(utcMillis).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+const displayValue = computed(() => toDisplayDate(props.modelValue));
+const minInputDate = computed(() => toInputDate(props.min));
 
 watch(
-  () => normalizedValue.value,
-  (nextValue) => {
-    const date = parseYmd(nextValue)
-    if (date) {
-      viewYear.value = date.getFullYear()
-      viewMonth.value = date.getMonth()
-    }
+  () => props.timezone,
+  (newTimeZone, oldTimeZone) => {
+    if (newTimeZone === oldTimeZone) return;
+
+    emit('update:modelValue', '');
+    if (!isOpen.value) return;
+    vmDraftDate.value = '';
   },
-  { immediate: true },
-)
-
-function normalizeDateValue(value) {
-  if (!value) {
-    return ''
-  }
-
-  const asString = String(value)
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(asString)) {
-    return asString
-  }
-
-  const date = new Date(asString)
-  if (Number.isNaN(date.getTime())) {
-    return ''
-  }
-
-  return formatDate(date)
-}
-
-function formatDate(date) {
-  const y = String(date.getFullYear())
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-
-  return `${y}-${m}-${d}`
-}
-
-function formatDateForDisplay(date) {
-  const y = String(date.getFullYear())
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}/${m}/${d}`
-}
-
-function parseYmd(value) {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return null
-  }
-
-  const [year, month, day] = value.split('-').map(Number)
-  const date = new Date(year, month - 1, day)
-
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-    return null
-  }
-
-  return date
-}
-
-function buildCalendarDays(year, month) {
-  const firstDate = new Date(year, month, 1)
-  const startWeekday = firstDate.getDay()
-  const startDate = new Date(year, month, 1 - startWeekday)
-  const days = []
-
-  for (let i = 0; i < 42; i += 1) {
-    const date = new Date(startDate)
-    date.setDate(startDate.getDate() + i)
-
-    days.push({
-      key: `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`,
-      date,
-      day: date.getDate(),
-      isCurrentMonth: date.getMonth() === month,
-      isToday: isSameDate(date, today),
-      isSelected: selectedDate.value ? isSameDate(date, selectedDate.value) : false,
-      isDisabled: !isWithinRange(date),
-    })
-  }
-
-  return days
-}
-
-function isWithinRange(date) {
-  const time = dateAtStart(date).getTime()
-
-  if (minDate.value) {
-    const minTime = dateAtStart(minDate.value).getTime()
-    if (time < minTime) {
-      return false
-    }
-  }
-
-  if (maxDate.value) {
-    const maxTime = dateAtStart(maxDate.value).getTime()
-    if (time > maxTime) {
-      return false
-    }
-  }
-
-  return true
-}
-
-function dateAtStart(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
-}
-
-function isSameDate(a, b) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  )
-}
+);
 
 function openModal() {
-  if (props.disabled) {
-    return
-  }
-
-  const base = selectedDate.value || today
-  viewYear.value = base.getFullYear()
-  viewMonth.value = base.getMonth()
-  isOpen.value = true
+  vmDraftDate.value = toInputDate(props.modelValue);
+  isOpen.value = true;
 }
 
 function closeModal() {
-  isOpen.value = false
-}
-
-function prevMonth() {
-  if (viewMonth.value === 0) {
-    viewMonth.value = 11
-    viewYear.value -= 1
-    return
-  }
-  viewMonth.value -= 1
-}
-
-function nextMonth() {
-  if (viewMonth.value === 11) {
-    viewMonth.value = 0
-    viewYear.value += 1
-    return
-  }
-  viewMonth.value += 1
-}
-
-function selectDay(dayInfo) {
-  if (dayInfo.isDisabled) {
-    return
-  }
-
-  const ymd = formatDate(dayInfo.date)
-  emit('update:modelValue', ymd)
-  emit('change', ymd)
-  closeModal()
+  isOpen.value = false;
 }
 
 function clearDate() {
-  emit('update:modelValue', '')
-  emit('change', '')
-  closeModal()
+  emit('update:modelValue', '');
+  closeModal();
 }
 
-function handleOverlayClick(event) {
-  if (event.target === event.currentTarget) {
-    closeModal()
-  }
-}
+function applyDate() {
+  const iso = toIsoUtc(vmDraftDate.value);
+  if (!iso) return;
 
-function onEscape(event) {
-  if (event.key === 'Escape') {
-    closeModal()
-  }
-}
-
-function onInput(event) {
-  emit('update:modelValue', event.target.value)
-}
-
-function onChange(event) {
-  emit('change', event.target.value)
+  emit('update:modelValue', iso);
+  closeModal();
 }
 </script>
 
 <template>
-  <div class="date-selector" :class="{ 'is-disabled': disabled }">
-    <button
-      type="button"
-      class="date-selector__trigger"
-      :id="id || undefined"
-      :disabled="disabled"
-      :aria-expanded="isOpen"
-      aria-haspopup="dialog"
-      @click="openModal"
-    >
-      <span class="date-selector__text" :class="{ 'is-empty': !normalizedValue }">{{
-        displayText
-      }}</span>
-      <span class="date-selector__icon">Cal</span>
+  <div class="date-selector">
+    <button type="button" class="date-selector__trigger" @click="openModal">
+      {{ displayValue }}
     </button>
 
-    <input v-if="name" type="hidden" :name="name" :value="normalizedValue" :required="required" />
-
     <Teleport to="body">
-      <div
-        v-if="isOpen"
-        class="date-modal-overlay"
-        role="presentation"
-        @click="handleOverlayClick"
-        @keydown="onEscape"
-      >
-        <section class="date-modal" role="dialog" aria-modal="true" aria-label="Date picker">
-          <header class="date-modal__header">
-            <button type="button" class="date-modal__nav" @click="prevMonth">&lt;</button>
-            <strong class="date-modal__title">{{ monthLabel }}</strong>
-            <button type="button" class="date-modal__nav" @click="nextMonth">&gt;</button>
-          </header>
+      <div v-if="isOpen" class="date-selector__backdrop" @click="closeModal">
+        <div class="date-selector__modal" role="dialog" aria-modal="true" aria-label="日付選択" @click.stop>
+          <p class="date-selector__title">日付を選択</p>
+          <input v-model="vmDraftDate" type="date" class="date-selector__input" :min="minInputDate || undefined" />
 
-          <div class="date-modal__weekdays">
-            <span v-for="day in weekdayLabels" :key="day" class="date-modal__weekday">{{
-              day
-            }}</span>
+          <div class="date-selector__actions">
+            <button type="button" @click="closeModal">キャンセル</button>
+            <button type="button" @click="clearDate">クリア</button>
+            <button type="button" class="date-selector__apply" @click="applyDate">決定</button>
           </div>
-
-          <div class="date-modal__grid">
-            <button
-              v-for="dayInfo in calendarDays"
-              :key="dayInfo.key"
-              type="button"
-              class="date-modal__day"
-              :class="{
-                'is-outside': !dayInfo.isCurrentMonth,
-                'is-today': dayInfo.isToday,
-                'is-selected': dayInfo.isSelected,
-                'is-disabled': dayInfo.isDisabled,
-              }"
-              :disabled="dayInfo.isDisabled"
-              @click="selectDay(dayInfo)"
-            >
-              {{ dayInfo.day }}
-            </button>
-          </div>
-
-          <footer class="date-modal__actions">
-            <button type="button" class="date-modal__action" @click="clearDate">Clear</button>
-            <button type="button" class="date-modal__action" @click="closeModal">Close</button>
-          </footer>
-        </section>
+        </div>
       </div>
     </Teleport>
   </div>
@@ -324,155 +179,66 @@ function onChange(event) {
 @use '@/styles/variables.scss' as var;
 
 .date-selector {
-  position: relative;
   width: 100%;
-
-  &.is-disabled {
-    opacity: 0.7;
-  }
 }
 
 .date-selector__trigger {
   width: 100%;
-  min-height: 40px;
-  border: 1px solid var(--border);
-  border-radius: var(--border-radius);
-  background-color: var(--bg-0);
-  color: var(--text-0);
-  padding: 0.6rem 0.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  cursor: pointer;
-
-  &:focus {
-    outline: none;
-    border-color: var(--primary);
-  }
-
-  &:disabled {
-    cursor: not-allowed;
-  }
+  text-align: left;
 }
 
-.date-selector__text {
-  font-size: 1rem;
-
-  &.is-empty {
-    color: var(--text-1);
-  }
-}
-
-.date-selector__icon {
-  font-size: 0.78rem;
-  color: var(--text-1);
-  border: 1px solid var(--border);
-  border-radius: var(--border-radius);
-  padding: 0.15rem 0.4rem;
-}
-
-.date-modal-overlay {
+.date-selector__backdrop {
   position: fixed;
   inset: 0;
-  z-index: 90;
-  background-color: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.45);
   display: grid;
   place-items: center;
   padding: 1rem;
+  z-index: 80;
 }
 
-.date-modal {
-  width: min(420px, 100%);
+.date-selector__modal {
+  width: min(26rem, 100%);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background-color: var(--bg-0);
-  color: var(--text-0);
-  box-shadow: 0 14px 36px var(--shadow);
-  padding: 0.9rem;
-}
-
-.date-modal__header {
+  border-radius: var(--border-radius);
+  background: var(--bg-0);
+  box-shadow: 0 0.7rem 1.5rem var(--shadow);
+  padding: 1rem;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.8rem;
+  flex-direction: column;
+  gap: 0.85rem;
 }
 
-.date-modal__title {
-  font-size: 1rem;
+.date-selector__title {
+  font-weight: 700;
 }
 
-.date-modal__nav {
-  border: 1px solid var(--border);
-  background-color: var(--bg-1);
-  color: var(--text-0);
-  border-radius: 8px;
-  width: 34px;
-  height: 34px;
-  cursor: pointer;
+.date-selector__input {
+  width: 100%;
 }
 
-.date-modal__weekdays {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  margin-bottom: 0.25rem;
-}
-
-.date-modal__weekday {
-  text-align: center;
-  font-size: 0.72rem;
-  color: var(--text-1);
-  padding: 0.3rem 0;
-}
-
-.date-modal__grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.25rem;
-}
-
-.date-modal__day {
-  border: 1px solid transparent;
-  border-radius: 8px;
-  min-height: 36px;
-  background-color: var(--bg-1);
-  color: var(--text-0);
-  cursor: pointer;
-
-  &.is-outside {
-    opacity: 0.55;
-  }
-
-  &.is-today {
-    border-color: var(--primary);
-  }
-
-  &.is-selected {
-    background-color: var(--primary);
-    color: #fff;
-    border-color: var(--primary);
-  }
-
-  &.is-disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
-}
-
-.date-modal__actions {
-  margin-top: 0.9rem;
+.date-selector__actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
 }
 
-.date-modal__action {
+.date-selector__apply {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+button {
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background-color: var(--bg-1);
+  border-radius: var(--border-radius);
+  background: var(--bg-1);
   color: var(--text-0);
-  padding: 0.45rem 0.7rem;
+  padding: 0.45rem 0.65rem;
   cursor: pointer;
+}
+
+button:hover {
+  background: var(--bg-2);
 }
 </style>

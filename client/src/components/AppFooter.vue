@@ -1,6 +1,6 @@
 <template>
   <footer class="app-footer">
-    <p>Copyright &copy; 2024 立替精算アプリ</p>
+    <p>Copyright &copy; 2026 立替精算アプリ</p>
   </footer>
 </template>
 

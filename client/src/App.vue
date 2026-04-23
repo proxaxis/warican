@@ -1,49 +1,48 @@
 <script setup>
-import { onMounted, onUnmounted } from 'vue'
-import AppHeader from '@/components/AppHeader.vue'
-import AppFooter from '@/components/AppFooter.vue'
-import { useUserStore } from '@/stores/user'
-import LoadingSpinner from './components/LoadingSpinner.vue'
+import { onMounted, onUnmounted } from 'vue';
+import AppFooter from '@/components/AppFooter.vue';
+import { useUserStore } from '@/stores/user';
+import LoadingSpinner from './components/LoadingSpinner.vue';
+import AppToast from '@/components/AppToast.vue';
+import AppDialog from '@/components/AppDialog.vue';
 
-const userStore = useUserStore()
+const userStore = useUserStore();
 
 onMounted(() => {
-  userStore.isLoading = true
+  userStore.isLoading = true;
   // システムのテーマ設定を取得
   const systemTheme = (() => {
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark'
+      return 'dark';
     }
-    return 'light'
-  })()
+    return 'light';
+  })();
 
   // システムテーマを取得して適用
-  userStore.applyTheme(systemTheme)
+  userStore.applyTheme(systemTheme);
 
   // システムテーマの変更を監視
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
   const handleThemeChange = (e) => {
-    userStore.applyTheme(e.matches ? 'dark' : 'light')
-  }
-  mediaQuery.addEventListener('change', handleThemeChange)
+    userStore.applyTheme(e.matches ? 'dark' : 'light');
+  };
+  mediaQuery.addEventListener('change', handleThemeChange);
 
-  userStore.isLoading = false
-})
+  userStore.isLoading = false;
+});
 
 onUnmounted(() => {
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-  mediaQuery.removeEventListener('change', handleThemeChange)
-})
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  mediaQuery.removeEventListener('change', handleThemeChange);
+});
 </script>
 
 <template>
-  <AppHeader />
-
-  <main class="views-wrapper">
-    <router-view />
-  </main>
+  <router-view />
 
   <LoadingSpinner v-if="userStore.isLoading" />
+  <AppToast />
+  <AppDialog />
 
   <AppFooter />
 </template>
@@ -85,16 +84,13 @@ h4,
 h5,
 h6,
 label,
+summary,
 p,
 a,
 a:active,
 a:visited {
   color: var(--text-0);
   text-decoration: none;
-}
-
-a:hover {
-  color: var(--accent);
 }
 
 nav,
@@ -124,15 +120,21 @@ details summary:hover {
   min-height: 100vh;
 }
 
-.views-wrapper {
-  padding: 0.5rem 1rem;
-  width: calc(100% - 2rem);
-  max-width: 1024px;
-  margin: 0 auto;
+.views {
+  width: 100%;
+
+  .app-content {
+    padding: 1.5rem 1rem;
+    width: calc(100% - 2rem);
+    max-width: 1024px;
+    margin: 0 auto;
+    min-height: 90vh;
+  }
 }
 
 .app-footer {
   flex-grow: 1;
+  min-height: 12rem;
 }
 
 .icons {
@@ -153,6 +155,95 @@ details summary:hover {
   p {
     margin: 0.5rem 0 0;
     color: var(--text-1);
+  }
+}
+
+details {
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius);
+  background-color: var(--bg-0);
+  margin-bottom: 0.5rem;
+
+  summary {
+    padding: 0.9rem 1rem;
+    border-radius: var(--border-radius);
+    background-color: var(--bg-1);
+  }
+
+  &[open] summary {
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+    background-color: var(--bg-2);
+  }
+
+  .content {
+    padding: 0.9rem 1rem;
+  }
+}
+
+// 入力要素スタイル
+input[type='text'],
+input[type='number'],
+select,
+textarea {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius);
+  background-color: var(--bg-0);
+  color: var(--text-0);
+  transition: 0.3s;
+  font-size: 0.8rem;
+
+  &:focus {
+    outline: none;
+    border-color: var(--primary);
+  }
+}
+
+select {
+  cursor: pointer;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 3rem;
+}
+
+// disabled されたボタンのスタイル
+button.delete {
+  border: none;
+  border-radius: var(--border-radius);
+  transition: 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-2);
+
+  &:hover {
+    background-color: var(--danger);
+    color: white;
+    cursor: pointer;
+  }
+
+  &:disabled {
+    background-color: inherit;
+    border: 1px solid var(--border);
+    cursor: not-allowed;
+    * {
+      fill: var(--text-1);
+    }
+  }
+}
+
+.empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-1);
+  background-color: var(--bg-1);
+  border-radius: var(--border-radius);
+  font-style: italic;
+  * {
+    margin: 0;
+    padding: 0;
   }
 }
 </style>

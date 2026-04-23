@@ -1,149 +1,160 @@
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { defineStore } from 'pinia';
-import { useRouter } from 'vue-router';
+import { useUserStore } from '@/stores/user';
+import { usePaymentStore } from '@/stores/payment';
+import { toSafeString, request } from '@/utils/fetch';
+import toast from '@/utils/toast';
 
 export const useGroupStore = defineStore('group', () => {
-  const router = useRouter();
+  const userStore = useUserStore();
+  const paymentStore = usePaymentStore();
 
-  // グループの基本情報
-  const info = ref({
-    id: '',
+  /** @type {string} グループID */
+  const id = ref('');
+
+  const data = ref({
+    /** @type {string} グループ名 */
     name: '',
+    /** @type {string} グループ説明 */
     description: '',
+    /** @type {string} グループアイコン */
     icon: '',
-  });
-  const members = ref([]);
-  const subGroups = ref([]);
-  const categories = ref([]);
-
-  // グループの設定
-  const option = ref({
+    /** @type {{ uid: string|null, id: number, name: string, icon: string }[]} グループメンバー */
+    members: [],
+    /** @type {{ id: number, name: string, members: number[] }[]} サブグループ */
+    subGroups: [],
+    /** @type {{ id: number, name: string }[]} カテゴリ */
+    categories: [],
+    /** @type {string} 表示通貨 */
     currency: 'JPY',
-    timeOffset: 9,
+    /** @type {string} タイムゾーン */
+    timezone: 'Asia/Tokyo',
+    /** @type {string} 開始日時 */
+    startAt: '1970-01-01T00:00:00Z',
+    /** @type {string} 終了日時 */
+    endAt: '1970-01-01T00:00:00Z',
+    /** @type {string} 作成日時 */
+    createdAt: '1970-01-01T00:00:00Z',
+    /** @type {string} 更新日時 */
+    updatedAt: '1970-01-01T00:00:00Z',
   });
 
-  const createdAt = ref(null);
-  const updatedAt = ref(null);
-
-  function _fetchGroupData(id) {
-    info.value.name = 'グループの名前';
-    info.value.description = 'グループの説明';
-    info.value.icon = '😊';
-    option.value.currency = 'JPY';
-    option.value.timeOffset = 9;
-    members.value = [
-      {
-        id: 1,
-        name: 'ユーザA',
-        icon: '😊',
-      },
-      {
-        id: 2,
-        name: 'ユーザB',
-        icon: '😊',
-      },
-      {
-        id: 3,
-        name: 'ユーザC',
-        icon: '😊',
-      },
-      {
-        id: 4,
-        name: 'ユーザD',
-        icon: '😊',
-      },
-    ];
-    subGroups.value = [
-      {
-        id: 1,
-        name: 'サブグループ1',
-        members: [1, 2],
-      },
-      {
-        id: 2,
-        name: 'サブグループ2',
-        members: [3, 4],
-      },
-    ];
-    categories.value = [
-      {
-        id: 1,
-        name: '食費',
-      },
-      {
-        id: 2,
-        name: '交通費',
-      },
-      {
-        id: 3,
-        name: '娯楽',
-      },
-    ];
-    createdAt.value = new Date().toISOString();
-    updatedAt.value = new Date().toISOString();
-  }
-
-  const id = computed({
-    get() {
-      return info.value.id;
-    },
-    set(newId) {
-      info.value.id = newId;
-    },
-  });
-
-  const timeInfo = computed(() => {
-    const offset = option.value.timeOffset;
-    const created = new Date(createdAt.value);
-    const updated = new Date(updatedAt.value);
-    const now = new Date();
-    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-    const localTime = new Date(utc + 3600000 * offset);
+  const g = computed(() => {
     return {
-      now: localTime,
-      created: new Date(created.getTime() + 3600000 * offset).toLocaleDateString('ja-JP', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      updated: new Date(updated.getTime() + 3600000 * offset).toLocaleDateString('ja-JP', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      offset,
-    }
+      ...data.value,
+      currency: {
+        code: data.value.currency,
+        name: new Intl.DisplayNames([userStore.locale], { type: 'currency' }).of(data.value.currency),
+        symbol: new Intl.NumberFormat(userStore.locale, {
+          style: 'currency',
+          currency: data.value.currency,
+        })
+          .formatToParts(0)
+          .find((p) => p.type === 'currency')?.value || data.value.currency,
+      },
+      members: data.value.members.map((m) => ({ ...m, banner: m.icon + m.name })),
+      timeDisplay: {
+        created: new Intl.DateTimeFormat(userStore.locale, {
+          ...userStore.time.expression,
+          timeZone: data.value.timezone,
+        }).format(new Date(data.value.createdAt)),
+        updated: new Intl.DateTimeFormat(userStore.locale, {
+          ...userStore.time.expression,
+          timeZone: data.value.timezone,
+        }).format(new Date(data.value.updatedAt)),
+        start: (data.value.startAt) ? new Intl.DateTimeFormat(userStore.locale, {
+          ...userStore.time.short,
+          timeZone: data.value.timezone,
+        }).format(new Date(data.value.startAt)) : null,
+        end: (data.value.endAt) ? new Intl.DateTimeFormat(userStore.locale, {
+          ...userStore.time.short,
+          timeZone: data.value.timezone,
+        }).format(new Date(data.value.endAt)) : null,
+        offset: new Intl.DateTimeFormat(userStore.locale, {
+          timeZone: data.value.timezone,
+          timeZoneName: 'shortOffset'
+        }).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value || '',
+      },
+      currencyDisplay: ((code) => {
+        const name = new Intl.DisplayNames([userStore.locale], { type: 'currency' }).of(code);
+        const symbol = new Intl.NumberFormat(userStore.locale, {
+            style: 'currency',
+            currency: code,
+          })
+            .formatToParts(0)
+            .find((p) => p.type === 'currency')?.value || code;
+        return { code, name, symbol };
+      })(data.value.currency),
+    };
   });
 
-  function forceFetchGroupData() {
-    if (id.value === '') return;
-    _fetchGroupData(id.value);
+  function getMemberById(mmId) {
+    // console.trace('getMemberById', mmId, data.value.members);
+    const member = data.value.members.find((m) => m.id === mmId) ?? { uid: null, id: mmId, name: 'Unknown', icon: '🫥' };
+    member.banner = member.icon + member.name;
+    return member;
   }
 
-  function getMemberById(memId) {
-    return members.value.find((m) => m.id === memId) || null;
+  function getSubGroupById(sgId) {
+    return (
+      data.value.subGroups.find((sg) => sg.id === sgId) || {
+        id: sgId,
+        name: 'Unknown Subgroup',
+        icon: '🫥',
+        members: [],
+      }
+    );
   }
 
-  watch(() => id.value, (to) => {
-    if (to === '') return;
-    _fetchGroupData(to);
+  function getCategoryById(ctId) {
+    return data.value.categories.find((c) => c.id === ctId) || { id: ctId, name: 'Unknown Category' };
+  }
+
+  async function _fetchGroupInfo(grpId) {
+    const d = await request(`/g/${toSafeString(grpId)}/info`);
+    data.value.name = d.name;
+    data.value.description = d.description;
+    data.value.icon = d.icon;
+    data.value.members = d.members;
+    data.value.subGroups = d.sub_groups;
+    data.value.categories = d.categories;
+    data.value.currency = d.currency;
+    data.value.timezone = d.timezone;
+    data.value.startAt = d.start_at;
+    data.value.endAt = d.end_at;
+    data.value.createdAt = d.created_at;
+    data.value.updatedAt = d.updated_at;
+    return d;
+  }
+
+  const init = (grpId) => new Promise(async (resolve, reject) => {
+    grpId = toSafeString(grpId).trim();
+    if (grpId === '' || grpId === undefined || grpId === null) {
+      resolve();
+      return;
+    }
+    id.value = grpId;
+    try {
+      userStore.isLoading = true;
+      const res = await _fetchGroupInfo(grpId);
+      console.log('Group info loaded', res);
+      paymentStore.page = 1;
+      await paymentStore.fetchPaymentsData(grpId, 1);
+      resolve();
+    } catch (error) {
+      console.error(error);
+      reject(error);
+    } finally {
+      userStore.isLoading = false;
+    }
   });
 
   return {
     id,
-    info,
-    members,
-    subGroups,
-    categories,
-    option,
-    createdAt,
-    updatedAt,
-    timeInfo,
-    forceFetchGroupData,
+    g,
     getMemberById,
-  }
+    getSubGroupById,
+    getCategoryById,
+    init,
+  };
 });
